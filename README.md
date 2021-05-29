@@ -3,5 +3,5 @@ Se trata de una versión sencilla del clásico juego del Snake desarrollado en u
 
 ## Incrementos del proyecto
 
-###Primer incremento:
+#Primer incremento:
 Dibujar la serpiente completa en la ventana principal de la aplicación.
