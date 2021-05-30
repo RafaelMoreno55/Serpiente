@@ -30,7 +30,8 @@ struct PedacitoS {
 typedef struct PedacitoS PEDACITOS;
 
 PEDACITOS* NuevaSerpiente(int);
-void DibujarSerpiente(HDC, const PEDACITOS *, RECT);
+void DibujarSerpiente(HDC, const PEDACITOS *);
+int MoverSerpiente(PEDACITOS *, int, RECT);
 
 // Variables globales:
 HINSTANCE hInst;                                // instancia actual
@@ -162,6 +163,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             serpiente = NuevaSerpiente(tams);
         }    
         break;
+    case WM_KEYDOWN:
+        {
+            GetClientRect(hWnd, &rect);
+            switch (wParam) {
+            case VK_UP:
+                {
+                MoverSerpiente(serpiente, ARRIBA, rect);
+                InvalidateRect(hWnd, NULL, TRUE);
+                }
+                break;
+            case VK_DOWN:
+                MoverSerpiente(serpiente, ABAJO, rect);
+                InvalidateRect(hWnd, NULL, TRUE);
+                break;
+            case VK_LEFT:
+                MoverSerpiente(serpiente, IZQ, rect);
+                InvalidateRect(hWnd, NULL, TRUE);
+                break;
+            case VK_RIGHT:
+                MoverSerpiente(serpiente, DER, rect);
+                InvalidateRect(hWnd, NULL, TRUE);
+                break;
+            }
+        }
+        break;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
@@ -183,7 +209,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             hdc = BeginPaint(hWnd, &ps);
 
-            DibujarSerpiente(hdc, serpiente, rect);
+            DibujarSerpiente(hdc, serpiente);
 
             EndPaint(hWnd, &ps);
         }
@@ -248,9 +274,10 @@ PEDACITOS * NuevaSerpiente(int tams)
 
     return serpiente;
 }
-void DibujarSerpiente(HDC hdc, const PEDACITOS *serpiente, RECT rect)
+void DibujarSerpiente(HDC hdc, const PEDACITOS *serpiente)
 {
     int i = 1;
+    //se traza la cola según la dirección
     switch (serpiente[0].dir) {
     case DER:
         MoveToEx(hdc, serpiente[0].pos.x * TAMSERP + TAMSERP,
@@ -263,12 +290,37 @@ void DibujarSerpiente(HDC hdc, const PEDACITOS *serpiente, RECT rect)
             serpiente[0].pos.y * TAMSERP);
         break;
     case IZQ:
+        MoveToEx(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP, NULL);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP + TAMSERP,
+            serpiente[0].pos.y * TAMSERP + TAMSERP / 2);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP + TAMSERP);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP);
         break;
     case ARRIBA:
+        MoveToEx(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP, NULL);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP + TAMSERP/2,
+            serpiente[0].pos.y * TAMSERP + TAMSERP);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP + TAMSERP,
+            serpiente[0].pos.y * TAMSERP);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP);
         break;
     case ABAJO:
+        MoveToEx(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP + TAMSERP, NULL);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP + TAMSERP/2,
+            serpiente[0].pos.y * TAMSERP);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP + TAMSERP,
+            serpiente[0].pos.y * TAMSERP + TAMSERP);
+        LineTo(hdc, serpiente[0].pos.x * TAMSERP,
+            serpiente[0].pos.y * TAMSERP + TAMSERP);
         break;
     }
+    //se traza la cabeza según la dirección
     while (serpiente[i].tipo != CABEZA) {
         RoundRect(hdc, serpiente[i].pos.x * TAMSERP, 
             serpiente[i].pos.y * TAMSERP,
@@ -277,6 +329,7 @@ void DibujarSerpiente(HDC hdc, const PEDACITOS *serpiente, RECT rect)
             5, 5);
         i++;
     }
+    //se traza la cabeza según la dirección
     RoundRect(hdc, serpiente[i].pos.x * TAMSERP,
         serpiente[i].pos.y * TAMSERP,
         serpiente[i].pos.x * TAMSERP + TAMSERP,
@@ -296,10 +349,88 @@ void DibujarSerpiente(HDC hdc, const PEDACITOS *serpiente, RECT rect)
             serpiente[i].pos.y * TAMSERP + TAMSERP);
         break;
     case IZQ:
+        Ellipse(hdc, serpiente[i].pos.x * TAMSERP + TAMSERP/2,
+            serpiente[i].pos.y * TAMSERP,
+            serpiente[i].pos.x * TAMSERP + TAMSERP,
+            serpiente[i].pos.y * TAMSERP + TAMSERP/2);
+        Ellipse(hdc, serpiente[i].pos.x * TAMSERP + TAMSERP/2,
+            serpiente[i].pos.y * TAMSERP + TAMSERP/2,
+            serpiente[i].pos.x * TAMSERP + TAMSERP,
+            serpiente[i].pos.y * TAMSERP + TAMSERP);
         break;
     case ARRIBA:
+        Ellipse(hdc, serpiente[i].pos.x * TAMSERP,
+            serpiente[i].pos.y * TAMSERP + TAMSERP/2,
+            serpiente[i].pos.x * TAMSERP + TAMSERP / 2,
+            serpiente[i].pos.y * TAMSERP + TAMSERP);
+        Ellipse(hdc, serpiente[i].pos.x * TAMSERP + TAMSERP/2,
+            serpiente[i].pos.y * TAMSERP + TAMSERP / 2,
+            serpiente[i].pos.x * TAMSERP + TAMSERP,
+            serpiente[i].pos.y * TAMSERP + TAMSERP);
         break;
     case ABAJO:
+        Ellipse(hdc, serpiente[i].pos.x * TAMSERP,
+            serpiente[i].pos.y * TAMSERP,
+            serpiente[i].pos.x * TAMSERP + TAMSERP / 2,
+            serpiente[i].pos.y * TAMSERP + TAMSERP / 2);
+        Ellipse(hdc, serpiente[i].pos.x * TAMSERP + TAMSERP/2,
+            serpiente[i].pos.y * TAMSERP,
+            serpiente[i].pos.x * TAMSERP + TAMSERP,
+            serpiente[i].pos.y * TAMSERP + TAMSERP/2);
         break;
     }
+}
+
+int MoverSerpiente(PEDACITOS *serpiente, int dir, RECT rect)
+{
+    int i = 0;
+
+    while (serpiente[i].tipo != CABEZA){
+        serpiente[i].dir = serpiente[i + 1].dir;
+        serpiente[i].pos = serpiente[i + 1].pos;
+        i++;
+    }
+
+    switch(serpiente[i].dir){
+    case DER:
+        if (dir != IZQ)
+            serpiente[i].dir = dir;
+        break;
+    case IZQ:
+        if (dir != DER)
+            serpiente[i].dir = dir;
+        break;
+    case ARRIBA:
+        if (dir != ABAJO)
+            serpiente[i].dir = dir;
+        break;
+    case ABAJO:
+        if (dir != ARRIBA)
+            serpiente[i].dir = dir;
+        break;
+    }
+
+    switch (serpiente[i].dir) {
+    case DER:
+        serpiente[i].pos.x = serpiente[i].pos.x + 1;
+        if (serpiente[i].pos.x >= rect.right / TAMSERP)
+            serpiente[i].pos.x = 0;
+        break;
+    case IZQ:
+        serpiente[i].pos.x = serpiente[i].pos.x - 1;
+        if (serpiente[i].pos.x < 0)
+            serpiente[i].pos.x = rect.right/TAMSERP;
+        break;
+    case ARRIBA:
+        serpiente[i].pos.y = serpiente[i].pos.y - 1;
+        if (serpiente[i].pos.y < 0)
+            serpiente[i].pos.y = rect.bottom/TAMSERP;
+        break;
+    case ABAJO:
+        serpiente[i].pos.y = serpiente[i].pos.y + 1;
+        if (serpiente[i].pos.y > rect.bottom/TAMSERP)
+            serpiente[i].pos.y = 0;
+        break;
+    }
+    return 1;
 }
