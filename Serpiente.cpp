@@ -16,6 +16,8 @@
 #define ARRIBA  3
 #define ABAJO   4
 
+#define IDT_TIMER1 1
+
 struct pos {
     int x;
     int y;
@@ -31,7 +33,8 @@ typedef struct PedacitoS PEDACITOS;
 
 PEDACITOS* NuevaSerpiente(int);
 void DibujarSerpiente(HDC, const PEDACITOS *);
-int MoverSerpiente(PEDACITOS *, int, RECT);
+int MoverSerpiente(PEDACITOS *, int, RECT, int);
+int Colisionar(PEDACITOS *, int);
 
 // Variables globales:
 HINSTANCE hInst;                                // instancia actual
@@ -161,7 +164,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CREATE:
         {
             serpiente = NuevaSerpiente(tams);
+            SetTimer(hWnd, IDT_TIMER1, 500, NULL);
         }    
+        break;
+    case WM_TIMER:
+        {
+            switch (wParam) {
+            case IDT_TIMER1:
+            {
+                GetClientRect(hWnd, &rect);
+                if (!MoverSerpiente(serpiente, serpiente[tams - 1].dir, rect, tams)) {
+                    KillTimer(hWnd, IDT_TIMER1);
+                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                        MB_OK | MB_ICONINFORMATION);
+                }
+                InvalidateRect(hWnd, NULL, TRUE);
+            }
+                break;
+            }
+        }
         break;
     case WM_KEYDOWN:
         {
@@ -169,22 +190,44 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             switch (wParam) {
             case VK_UP:
                 {
-                MoverSerpiente(serpiente, ARRIBA, rect);
-                InvalidateRect(hWnd, NULL, TRUE);
+                if (!MoverSerpiente(serpiente, ARRIBA, rect, tams)) {
+                    KillTimer(hWnd, IDT_TIMER1);
+                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                        MB_OK | MB_ICONINFORMATION);
                 }
+                InvalidateRect(hWnd, NULL, TRUE);
                 break;
+                }
             case VK_DOWN:
-                MoverSerpiente(serpiente, ABAJO, rect);
+                {
+                if (!MoverSerpiente(serpiente, ABAJO, rect, tams)) {
+                    KillTimer(hWnd, IDT_TIMER1);
+                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                        MB_OK | MB_ICONINFORMATION);
+                }
                 InvalidateRect(hWnd, NULL, TRUE);
                 break;
+                }
             case VK_LEFT:
-                MoverSerpiente(serpiente, IZQ, rect);
+                {
+                if (!MoverSerpiente(serpiente, IZQ, rect, tams)) {
+                    KillTimer(hWnd, IDT_TIMER1);
+                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                        MB_OK | MB_ICONINFORMATION);
+                }
                 InvalidateRect(hWnd, NULL, TRUE);
                 break;
+                }
             case VK_RIGHT:
-                MoverSerpiente(serpiente, DER, rect);
+                {
+                if (!MoverSerpiente(serpiente, DER, rect, tams)) {
+                    KillTimer(hWnd, IDT_TIMER1);
+                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                        MB_OK | MB_ICONINFORMATION);
+                }
                 InvalidateRect(hWnd, NULL, TRUE);
                 break;
+                }
             }
         }
         break;
@@ -381,7 +424,7 @@ void DibujarSerpiente(HDC hdc, const PEDACITOS *serpiente)
     }
 }
 
-int MoverSerpiente(PEDACITOS *serpiente, int dir, RECT rect)
+int MoverSerpiente(PEDACITOS *serpiente, int dir, RECT rect, int tams)
 {
     int i = 0;
 
@@ -432,5 +475,19 @@ int MoverSerpiente(PEDACITOS *serpiente, int dir, RECT rect)
             serpiente[i].pos.y = 0;
         break;
     }
-    return 1;
+    return !Colisionar(serpiente, tams);
+}
+
+int Colisionar(PEDACITOS *serpiente, int tams)
+{
+    int i = 0;
+
+    while (serpiente[i].tipo != CABEZA) {
+        if (serpiente[i].pos.x == serpiente[tams-1].pos.x &&
+            serpiente[i].pos.y == serpiente[tams-1].pos.y){
+            return 1;
+        }
+        i++;
+    }
+    return 0;
 }
