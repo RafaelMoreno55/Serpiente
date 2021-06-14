@@ -1,6 +1,30 @@
 // Serpiente.cpp : Define el punto de entrada de la aplicación.
 //
+/*
+     Se establece una red peer to peer, por lo que una máquina dentro de la misma red pasa a tener el rol
+     de cliente y servidor.
+ 
+    Lógica del protocolo de comunicación cuando el cliente se comunica con el servidor
+    1-  Se limpia el buffer la cuál contendrá el mensaje por parte del cliente
+    2-  Haciendo uso de la función getString() se imprime en el buffer los valores que contendrá el mensaje: 
+        int dir -> dirección de la cabeza de la serpiente
+        int tam -> tamaño de la serpiente
+        int user -> para indicar que si se trata del cliente o servidor quién envía el mensaje
+        char* buffer -> mensaje que contiene la información de los parámetros: dir, tam, user
+    3-  Se manda a llamar la función EnviarMensaje() para obtener la dirección IP de la máquina del servidor que 
+        se encuentra contenida en el HWND hIP, para posteriormente guardarla en una cadena de caracteres. Recibe
+        como parámetros: el identificador del objeto en donde se encuentra la dirección IP del servidor, el identificador
+        de la ventana principal y el mensaje a enviar
+    4-  Antes de terminar la función EnviarMensaje() se manda a llamar a la función Cliente(), el cuál recibe 
+        un identificador de la ventana principal, la dirección IP del servidor y el mensaje a envíar
+    5-  En la función Cliente(), se inicializa Winsock, se resuelve la dirección y el puerto del servidor
 
+
+    Lógica del protocolo de comunicación cuando el servidor se comunica con el cliente
+
+
+
+*/
 #include "framework.h"
 #include "Serpiente.h"
 
@@ -34,8 +58,15 @@
 #define NADA    3
 
 #define IDT_TIMER1 1
-#define SERVER  7
-#define CLIENT  5
+
+#define TIMER       1
+#define KEYDOWN     2
+#define GAMEOVER    3
+#define SERVER      4
+#define CLIENT      5
+#define ONLY        6
+#define OFFTIMER    7
+#define ONTIMER     8
 
 struct pos {
     int x;
@@ -56,11 +87,9 @@ struct comida {
 };
 typedef struct comida COMIDA;
 
-COMIDA com = { {0,0}, NADA };
+static COMIDA com = { {0,0}, NADA };
 
-int bandIP = 0;
-int bandEC = 0;
-RECT area;
+RECT Arect;
 static PEDACITOS *serpiente = NULL;
 static PEDACITOS *serpienteCliente = NULL;
 static int bandServer = 0;
@@ -68,6 +97,10 @@ static int bandClient = 0;
 static int bandSolo = 0;
 static int tams = 5;
 static int tamsC = 5;
+static int ordenante = 0;
+static int dir = 0;
+static int dirC = 0;
+static int bandTimer = OFFTIMER;
 
 PEDACITOS* NuevaSerpiente(int);
 void DibujarSerpiente(HDC, const PEDACITOS *);
@@ -85,15 +118,11 @@ char szMiIP[17] = "127.0.0.1"; /*Mi dirección IP*/
 char szUsuario[32] = "User"; /*Mi nombre de Usuario actual*/
 
 DWORD WINAPI Servidor(LPVOID argumento); /*función que va hacer lanzada como hilo*/
-int Cliente(HWND hChat, char* szDirIP, PSTR pstrMensaje);
-//int Cliente(char* szDirIP, const char *pstrMensaje);
+int Cliente(HWND hWnd, char* szDirIP, PSTR pstrMensaje);
 
-//void EnviarMensaje(HWND hChat, HWND hEscribir, HWND hIP);
 void obtenerMensaje(HWND hWnd, char *szMsg);
 void EnviarMensaje(HWND hIP, HWND hWnd, char* mensaje);
-void getString(int dir, int tam, int x, int y, char* buffer);
-//void Mostrar_Mensaje(HWND hChat, char* szMiIP, char* szUsuario, char* szMsg, COLORREF color);
-//void Colorear_texto(HWND szChat, char* szUsuario, long ilength, COLORREF color);
+void getString(int ordenante, int user, int timer, int Comx, int Comy, int Comtipo, int dir, int tam, int dir2, int tam2, char* buffer);
 
 // Declaraciones de funciones adelantadas incluidas en este módulo de código:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -218,12 +247,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     RECT rect = { NULL };
     static HPEN hpenR, hpenV, hpenA, hpenG;
     static HBRUSH hbrR, hbrV, hbrA, hbrG;
-    //static int tams = 5;
-    //static int tamsC = 5;
     static int cuenta = 0;
     int wmId = LOWORD(wParam);
-    char msjIP[] = "Escriba su IP";
+    char msjIP[] = "IP del servidor";
     char msjCNX[] = "Esperando conexión...";
+    char aux[5];
 
     //variables utilizadas para el hilo servidor
     static HWND hIP;
@@ -244,13 +272,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         hbrA = CreateSolidBrush(RGB(0, 0, 255));
         hbrG = CreateSolidBrush(RGB(128, 128, 128));
 
-        serpiente = NuevaSerpiente(tams);
+        /*serpiente = NuevaSerpiente(tams);
         serpienteCliente = NuevaSerpiente(tamsC);
         serpienteCliente[0].pos.y = 3;
         serpienteCliente[1].pos.y = 3;
         serpienteCliente[2].pos.y = 3;
         serpienteCliente[3].pos.y = 3;
         serpienteCliente[4].pos.y = 3;
+        */
         //SetTimer(hWnd, IDT_TIMER1, 500, NULL);
 
         hIP = CreateWindowEx(0,
@@ -273,41 +302,79 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 GetClientRect(hWnd, &rect);
 
-                if (!MoverSerpiente(serpiente, serpiente[tams - 1].dir, rect, tams)) {
-                    KillTimer(hWnd, IDT_TIMER1);
-                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                        MB_OK | MB_ICONINFORMATION);
-                }
-                
-                if (!MoverSerpiente(serpienteCliente, serpienteCliente[tamsC - 1].dir, rect, tamsC)) {
-                    KillTimer(hWnd, IDT_TIMER1);
-                    MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                        MB_OK | MB_ICONINFORMATION);
-                }
-
-                cuenta++;
-                if (cuenta == 15) {
-                    if (rand() % 100 < 80) {
-                        com.tipo = CRECE;
+                if (bandSolo == ONLY)
+                {
+                    if (!MoverSerpiente(serpiente, serpiente[tams - 1].dir, rect, tams)) {
+                        KillTimer(hWnd, IDT_TIMER1);
+                        MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                            MB_OK | MB_ICONINFORMATION);
                     }
-                    else {
-                        com.tipo = ACHICA;
+
+                    cuenta++;
+                    if (cuenta == 15) {
+                        if (rand() % 100 < 80) {
+                            com.tipo = CRECE;
+                        }
+                        else {
+                            com.tipo = ACHICA;
+                        }
+                        com.pos.x = rand() % rect.right / TAMSERP;
+                        com.pos.y = rand() % rect.bottom / TAMSERP;
+                        cuenta = 0;
                     }
-                    com.pos.x = rand() % rect.right / TAMSERP;
-                    com.pos.y = rand() % rect.bottom / TAMSERP;
-                    cuenta = 0;
+
+                    if (Comer(serpiente, tams)) {
+                        serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
+                        com.tipo = NADA;
+                    }
+
+                    InvalidateRect(hWnd, NULL, TRUE);
                 }
 
-                if (Comer(serpiente, tams)){
-                    serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
-                    com.tipo = NADA;
-                }
+                if (bandTimer == ONTIMER)
+                {
+                    if (!MoverSerpiente(serpiente, serpiente[tams - 1].dir, rect, tams)) {
+                        KillTimer(hWnd, IDT_TIMER1);
+                        MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                            MB_OK | MB_ICONINFORMATION);
+                    }
 
-                if (Comer(serpienteCliente, tamsC)) {
-                    serpienteCliente = AjustarSerpiente(serpienteCliente, &tamsC, com.tipo, rect);
-                    com.tipo = NADA;
+                    if (!MoverSerpiente(serpienteCliente, serpienteCliente[tamsC - 1].dir, rect, tamsC)) {
+                        KillTimer(hWnd, IDT_TIMER1);
+                        MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                            MB_OK | MB_ICONINFORMATION);
+                    }
+
+                    
+                    /*cuenta++;
+                    if (cuenta == 15) {
+                        if (rand() % 100 < 80) {
+                            com.tipo = CRECE;
+                        }
+                        else {
+                            com.tipo = ACHICA;
+                        }
+                        com.pos.x = rand() % rect.right / TAMSERP;
+                        com.pos.y = rand() % rect.bottom / TAMSERP;
+                        cuenta = 0;
+                    }
+
+                    if (Comer(serpiente, tams)) {
+                        serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
+                        com.tipo = NADA;
+                    }
+
+                    if (Comer(serpienteCliente, tamsC)) {
+                        serpienteCliente = AjustarSerpiente(serpienteCliente, &tamsC, com.tipo, rect);
+                        com.tipo = NADA;
+                    }*/
+                    
+                    strcpy(buffer, "");
+                    getString(TIMER, NADA, NADA, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                    EnviarMensaje(hIP, hWnd, buffer);
                 }
-                InvalidateRect(hWnd, NULL, TRUE);
+                //InvalidateRect(hWnd, NULL, TRUE);
             }
                 break;
             }
@@ -319,7 +386,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             switch (wParam) {
             case VK_UP:
                 {
-                if (bandSolo == 1)
+                if (bandSolo == ONLY)
                 {
                     if (!MoverSerpiente(serpiente, ARRIBA, rect, tams)) {
                         KillTimer(hWnd, IDT_TIMER1);
@@ -333,57 +400,65 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     InvalidateRect(hWnd, NULL, TRUE);
                 }
 
-                if (bandServer == 1)
+                if (bandServer == SERVER)
                 {
-                    /*if (!MoverSerpiente(serpiente, ARRIBA, rect, tams)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+          
+                    if (!MoverSerpiente(serpiente, ARRIBA, rect, tams)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpiente, tams)) {
                         serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpiente[tams - 1].dir != ABAJO)
+                    }
+                    /*if (serpiente[tams - 1].dir != ABAJO)
                     {
                         serpiente[tams - 1].dir = ARRIBA;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpiente[tams - 1].dir, tams,SERVER, serpiente[tams - 1].pos.y, buffer);
+                    getString(KEYDOWN, SERVER, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
 
-                if (bandClient == 1)
+                if (bandClient == CLIENT)
                 {
-                    /*if (!MoverSerpiente(serpienteCliente, ARRIBA, rect, tamsC)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+            
+                    if (!MoverSerpiente(serpienteCliente, ARRIBA, rect, tamsC)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpienteCliente, tamsC)) {
                         serpienteCliente = AjustarSerpiente(serpienteCliente, &tamsC, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpienteCliente[tamsC - 1].dir != ABAJO)
+                    }
+                    /*if (serpienteCliente[tamsC - 1].dir != ABAJO)
                     {
                         serpienteCliente[tamsC - 1].dir = ARRIBA;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpienteCliente[tamsC - 1].dir, tamsC, CLIENT, serpienteCliente[tamsC - 1].pos.y, buffer);
+                    getString(KEYDOWN, CLIENT, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
                 
                 break;
                 }
             case VK_DOWN:
                 {
-                if (bandSolo == 1)
+                if (bandSolo == ONLY)
                 {
                     if (!MoverSerpiente(serpiente, ABAJO, rect, tams)) {
                         KillTimer(hWnd, IDT_TIMER1);
@@ -396,57 +471,67 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     }
                     InvalidateRect(hWnd, NULL, TRUE);
                 }
-                if (bandServer == 1) 
+                if (bandServer == SERVER) 
                 {
-                    /*if (!MoverSerpiente(serpiente, ABAJO, rect, tams)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+                   
+                    if (!MoverSerpiente(serpiente, ABAJO, rect, tams)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpiente, tams)) {
                         serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpiente[tams - 1].dir != ARRIBA)
+                    }
+                    /*if (serpiente[tams - 1].dir != ARRIBA)
                     {
                         serpiente[tams - 1].dir = ABAJO;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpiente[tams - 1].dir, tams, SERVER, serpiente[tams - 1].pos.y, buffer);
+                    getString(KEYDOWN, SERVER, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
 
-                if (bandClient == 1)
+                if (bandClient == CLIENT)
                 {
-                    /*if (!MoverSerpiente(serpienteCliente, ABAJO, rect, tamsC)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+            
+                    if (!MoverSerpiente(serpienteCliente, ABAJO, rect, tamsC)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpienteCliente, tamsC)) {
                         serpienteCliente = AjustarSerpiente(serpienteCliente, &tamsC, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    if (serpienteCliente[tamsC - 1].dir != ARRIBA)
+                    }
+
+                    /*if (serpienteCliente[tamsC - 1].dir != ARRIBA)
                     {
                         serpienteCliente[tamsC - 1].dir = ABAJO;
-                    }
+                    }*/
                     
                     strcpy(buffer, "");
-                    getString(serpienteCliente[tamsC - 1].dir, tamsC, CLIENT, serpienteCliente[tamsC - 1].pos.y, buffer);
+                    getString(KEYDOWN, CLIENT, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
                
                 break;
                 }
             case VK_LEFT:
                 {
-                if (bandSolo == 1)
+                if (bandSolo == ONLY)
                 {
                     if (!MoverSerpiente(serpiente, IZQ, rect, tams)) {
                         KillTimer(hWnd, IDT_TIMER1);
@@ -459,57 +544,66 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     }
                     InvalidateRect(hWnd, NULL, TRUE);
                 }
-                if (bandServer == 1)
+                if (bandServer == SERVER)
                 {
-                    /*if (!MoverSerpiente(serpiente, IZQ, rect, tams)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+                 
+                    if (!MoverSerpiente(serpiente, IZQ, rect, tams)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpiente, tams)) {
                         serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpiente[tams - 1].dir != DER)
+                    }
+                    /*if (serpiente[tams - 1].dir != DER)
                     {
                         serpiente[tams - 1].dir = IZQ;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpiente[tams - 1].dir, tams, SERVER, serpiente[tams - 1].pos.y, buffer);
+                    getString(KEYDOWN, SERVER, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
 
-                if (bandClient == 1)
+                if (bandClient == CLIENT)
                 {
-                    /*if (!MoverSerpiente(serpienteCliente, IZQ, rect, tamsC)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+              
+                    if (!MoverSerpiente(serpienteCliente, IZQ, rect, tamsC)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpienteCliente, tamsC)) {
                         serpienteCliente = AjustarSerpiente(serpienteCliente, &tamsC, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpienteCliente[tamsC - 1].dir != DER)
+                    }
+
+                    /*if (serpienteCliente[tamsC - 1].dir != DER)
                     {
                         serpienteCliente[tamsC - 1].dir = IZQ;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpienteCliente[tamsC - 1].dir, tamsC, CLIENT, serpienteCliente[tamsC - 1].pos.y, buffer);
+                    getString(KEYDOWN, CLIENT, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
                 
                 break;
                 }
             case VK_RIGHT:
                 {
-                if (bandSolo == 1)
+                if (bandSolo == ONLY)
                 {
                     if (!MoverSerpiente(serpiente, DER, rect, tams)) {
                         KillTimer(hWnd, IDT_TIMER1);
@@ -523,50 +617,60 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     InvalidateRect(hWnd, NULL, TRUE);
                 }
 
-                if (bandServer == 1)
+                if (bandServer == SERVER)
                 {
-                    /*if (!MoverSerpiente(serpiente, DER, rect, tams)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+              
+                    if (!MoverSerpiente(serpiente, DER, rect, tams)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpiente, tams)) {
                         serpiente = AjustarSerpiente(serpiente, &tams, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpiente[tams - 1].dir != IZQ)
+                    }
+
+                    /*if (serpiente[tams - 1].dir != IZQ)
                     {
                         serpiente[tams - 1].dir = DER;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpiente[tams - 1].dir, tams, SERVER, serpiente[tams - 1].pos.y, buffer);
+                    getString(KEYDOWN, SERVER, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
                 
-                if (bandClient == 1)
+                if (bandClient == CLIENT)
                 {
-                    /*if (!MoverSerpiente(serpienteCliente, DER, rect, tamsC)) {
-                        KillTimer(hWnd, IDT_TIMER1);
+                 
+                    if (!MoverSerpiente(serpienteCliente, DER, rect, tamsC)) {
+                        /*KillTimer(hWnd, IDT_TIMER1);
                         MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
-                            MB_OK | MB_ICONINFORMATION);
+                            MB_OK | MB_ICONINFORMATION);*/
+                        strcpy(buffer, "");
+                        getString(GAMEOVER, NADA, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                        EnviarMensaje(hIP, hWnd, buffer);
                     }
                     if (Comer(serpienteCliente, tamsC)) {
                         serpienteCliente = AjustarSerpiente(serpienteCliente, &tamsC, com.tipo, rect);
                         com.tipo = NADA;
-                    }*/
-                    
-                    if (serpienteCliente[tamsC - 1].dir != IZQ)
+                    }
+
+                    /*if (serpienteCliente[tamsC - 1].dir != IZQ)
                     {
                         serpienteCliente[tamsC - 1].dir = DER;
-                    }
+                    }*/
                     strcpy(buffer, "");
-                    getString(serpienteCliente[tamsC - 1].dir, tamsC, CLIENT, serpienteCliente[tamsC - 1].pos.y, buffer);
+                    getString(KEYDOWN, CLIENT, OFFTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
 
                     EnviarMensaje(hIP, hWnd, buffer);
-                    InvalidateRect(hWnd, NULL, TRUE);
+                    //InvalidateRect(hWnd, NULL, TRUE);
                 }
                 break;
                 }
@@ -584,26 +688,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     free(serpiente);
                     tams = 5;
                     cuenta = 0;
-                    bandSolo = 1;
+                    bandSolo = ONLY;
                     bandServer = 0;
                     bandClient = 0;
+                    bandTimer = OFFTIMER;
                     serpiente = NuevaSerpiente(tams);
                     SetTimer(hWnd, IDT_TIMER1, 500, NULL);
                     InvalidateRect(hWnd, NULL, TRUE);
                 }
                 break;
             case IDM_JUGARACOMPANIADO:
-                bandIP = 1;
-                bandEC = 1;
-                bandSolo = 0;
-                bandServer = 1;
-                bandClient = 0;
+                CloseHandle(hHiloServidor);
+                CloseHandle(hHiloCliente);
                 KillTimer(hWnd, IDT_TIMER1);
+                bandSolo = 0;
+                bandServer = SERVER;
+                bandClient = 0;
+                bandTimer = OFFTIMER;
+                ordenante = SERVER;
                 free(serpiente);
                 free(serpienteCliente);
                 tams = 5;
                 tamsC = 5;
                 cuenta = 0;
+                com = { {0,0}, NADA };
                 serpiente = NuevaSerpiente(tams);
                 serpienteCliente = NuevaSerpiente(tamsC);
                 serpienteCliente[0].pos.y = 3;
@@ -611,7 +719,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 serpienteCliente[2].pos.y = 3;
                 serpienteCliente[3].pos.y = 3;
                 serpienteCliente[4].pos.y = 3;
-                //SetTimer(hWnd, IDT_TIMER1, 500, NULL);
+                SetTimer(hWnd, IDT_TIMER1, 500, NULL);
                 hHiloServidor = CreateThread
                 (NULL, //atributos de seguridad por defecto
                     0, // usar el tamaño por defecto de la pila
@@ -627,11 +735,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 InvalidateRect(hWnd, NULL, TRUE);
                 break;
             case IDM_CONECTARSE:
+                CloseHandle(hHiloServidor);
+                CloseHandle(hHiloCliente);
                 bandSolo = 0;
                 bandServer = 0;
-                bandClient = 1;
-                KillTimer(hWnd, IDT_TIMER1);
-                SetTimer(hWnd, IDT_TIMER1, 500, NULL);
+                bandClient = CLIENT;
+                bandTimer = OFFTIMER;
+                free(serpiente);
+                free(serpienteCliente);
+                tams = 5;
+                tamsC = 5;
+                cuenta = 0;
+                com = { {0,0}, NADA };
+                serpiente = NuevaSerpiente(tams);
+                serpienteCliente = NuevaSerpiente(tamsC);
+                serpienteCliente[0].pos.y = 3;
+                serpienteCliente[1].pos.y = 3;
+                serpienteCliente[2].pos.y = 3;
+                serpienteCliente[3].pos.y = 3;
+                serpienteCliente[4].pos.y = 3;
                 hHiloCliente = CreateThread
                 (NULL, //atributos de seguridad por defecto
                     0, // usar el tamaño por defecto de la pila
@@ -644,6 +766,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     MessageBox(hWnd, L"Error al crear el hilo para el cliente", L"Error", MB_OK | MB_ICONERROR);
                 }
                 SetFocus(hWnd);
+                strcpy(buffer, "");
+                getString(CLIENT, NADA, ONTIMER, com.pos.x, com.pos.y, com.tipo, serpiente[tams - 1].dir, tams, serpienteCliente[tamsC - 1].dir, tamsC, buffer);
+
+                EnviarMensaje(hIP, hWnd, buffer);
                 break;
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
@@ -663,18 +789,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             HPEN hpenTemp;
             HBRUSH hbrTemp;
             
-            hpenTemp = (HPEN)SelectObject(hdc, hpenR);
-            hbrTemp = (HBRUSH)SelectObject(hdc, hbrR);
-            DibujarSerpiente(hdc, serpiente);
-            SelectObject(hdc, hpenTemp);
-            SelectObject(hdc, hbrTemp);
+            if (bandSolo == ONLY)
+            {
+                hpenTemp = (HPEN)SelectObject(hdc, hpenR);
+                hbrTemp = (HBRUSH)SelectObject(hdc, hbrR);
+                DibujarSerpiente(hdc, serpiente);
+                SelectObject(hdc, hpenTemp);
+                SelectObject(hdc, hbrTemp);
+            }
 
-            hpenTemp = (HPEN)SelectObject(hdc, hpenA);
-            hbrTemp = (HBRUSH)SelectObject(hdc, hbrA);
-            DibujarSerpiente(hdc, serpienteCliente);
-            SelectObject(hdc, hpenTemp);
-            SelectObject(hdc, hbrTemp);
+            if (bandServer == SERVER || bandClient == CLIENT)
+            {
+                hpenTemp = (HPEN)SelectObject(hdc, hpenR);
+                hbrTemp = (HBRUSH)SelectObject(hdc, hbrR);
+                DibujarSerpiente(hdc, serpiente);
+                SelectObject(hdc, hpenTemp);
+                SelectObject(hdc, hbrTemp);
 
+                hpenTemp = (HPEN)SelectObject(hdc, hpenA);
+                hbrTemp = (HBRUSH)SelectObject(hdc, hbrA);
+                DibujarSerpiente(hdc, serpienteCliente);
+                SelectObject(hdc, hpenTemp);
+                SelectObject(hdc, hbrTemp);
+            }
             
             if (com.tipo == CRECE) {
                 hpenTemp = (HPEN)SelectObject(hdc, hpenV);
@@ -708,10 +845,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             LineTo(hdc, 0, rect.bottom - 40);
             LineTo(hdc, 0, 0);
 
-            //mensaje de texto: "Escriba su IP"
+            //mensaje de texto: "Escriba la IP del servidor"
             TextOutA(hdc, 10, 510, msjIP, strlen(msjIP));
 
-            if (bandEC == 1)
+            if (ordenante == SERVER)
             {
                 //mensaje de texto: "Esperando conexión"
                 TextOutA(hdc, rect.right / 2, rect.bottom / 2, msjCNX, strlen(msjCNX));
@@ -730,7 +867,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         DeleteObject(hbrA);
         DeleteObject(hbrG);
         free(serpiente);
+        free(serpienteCliente);
         CloseHandle(hHiloServidor);
+        CloseHandle(hHiloCliente);
         PostQuitMessage(0);
         break;
     default:
@@ -1115,7 +1254,7 @@ int Cliente(HWND hWnd, char* szDirIP, PSTR pstrMensaje) {
     }
 
     // Envío de mensajes al servidor
-    sprintf_s(szMsg, "%s %s ", szDirIP, szUsuario);
+    /*sprintf_s(szMsg, "%s %s ", szDirIP, szUsuario);
     iResult = send(ConnectSocket, szMsg, sizeof(char) * 256, 0);
     iResult = recv(ConnectSocket, szMsg, sizeof(char) * 256, 0);
 
@@ -1124,15 +1263,24 @@ int Cliente(HWND hWnd, char* szDirIP, PSTR pstrMensaje) {
     iResult = send(ConnectSocket, szMsg, sizeof(char) * 256, 0);
     iResult = shutdown(ConnectSocket, SD_SEND);
     iResult = recv(ConnectSocket, szMsg, sizeof(char) * 256, 0);
+    */
 
-    //Mostrar_Mensaje(hChat, szMiIP, szUsuario, szMsg, RGB(0, 0, 255));
-    /*WCHAR    str[256];
-    MultiByteToWideChar(0, 0, szMsg, 256, str, 256);
-    MessageBox(NULL, str, L"Cliente", MB_OK);*/
+    //obtenerMensaje(hWnd, szMsg);
 
-    obtenerMensaje(hWnd, szMsg);
+    strcpy_s(szMsg, pstrMensaje);
+    iResult = send(ConnectSocket, szMsg, sizeof(char) * 256, 0);
+    iResult = shutdown(ConnectSocket, SD_SEND);
+    iResult = recv(ConnectSocket, szMsg, sizeof(char) * 256, 0);
 
-
+    if (strcmp(szMsg, "OK GAME OVER") == 0)
+    {
+        KillTimer(hWnd, IDT_TIMER1);
+        MessageBox(hWnd, L"Ya se murió, F", L"Fin del juego",
+                MB_OK | MB_ICONINFORMATION);
+    }
+    
+    InvalidateRect(hWnd, NULL, TRUE);
+   
 
     closesocket(ConnectSocket);
     WSACleanup();
@@ -1142,7 +1290,7 @@ int Cliente(HWND hWnd, char* szDirIP, PSTR pstrMensaje) {
 
 DWORD WINAPI Servidor(LPVOID argumento) {
 
-    HWND area = (HWND)argumento;
+    HWND hWnd = (HWND)argumento;
     int aux;
     TCHAR msgFalla[256];
 
@@ -1157,7 +1305,10 @@ DWORD WINAPI Servidor(LPVOID argumento) {
 
     int iSendResult;
     int recvbuflen = DEFAULT_BUFLEN;
-    char szBuffer[256], szIP[16], szNN[32]; //Guarda la cadena de mensajes para entrada y salida
+    char szBuffer[256];     //Guarda la cadena de mensajes para entrada y salida
+    //char szIP[16], szNN[32]; 
+
+    int Comx, Comy, Comtipo, timer, user;
 
     //Inicializar API winsock (similar a las de POSIX)
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -1232,24 +1383,68 @@ DWORD WINAPI Servidor(LPVOID argumento) {
 
         /**Envío de mensajes al cliente*/
         //Recibe hasta que el par cierre la conexión
-        iResult = recv(ClientSocket, szBuffer, sizeof(char) * 256, 0);
-        aux = sscanf(szBuffer, "%s %s ", szIP, szNN);
-        sprintf_s(szBuffer, "OK");
+        //iResult = recv(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        //aux = sscanf(szBuffer, "%s %s ", szIP, szNN);
+        //sprintf_s(szBuffer, "OK");
         //Hacer eco del bufer de nuevo al remitente
-        iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        //iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        //iResult = recv(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        //iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+
+
+        //obtenerMensaje(rect, szBuffer);
+
+        GetClientRect(hWnd, &Arect);
         iResult = recv(ClientSocket, szBuffer, sizeof(char) * 256, 0);
-        iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        aux = sscanf(szBuffer, "%d %d %d %d %d %d %d %d %d %d", &ordenante, &user, &timer ,&Comx, &Comy, &Comtipo, &dir, &tams, &dirC, &tamsC);
 
-        //Mostrar_Mensaje(hChat, szIP, szNN, szBuffer, RGB(34, 177, 76));
-        //printf("%s\n", szBuffer);
-        /*WCHAR    str[256];
-        MultiByteToWideChar(0, 0, szBuffer, 256, str, 256);
-        MessageBox(NULL, str, L"Servidor", MB_OK);
-        */
-        SetTimer(area, IDT_TIMER1, 500, NULL);
-        obtenerMensaje(area, szBuffer);
+        if (ordenante == TIMER)
+        {
+            com.tipo = Comtipo;
+            com.pos.x = Comx;
+            com.pos.y = Comy;
+            MoverSerpiente(serpiente, dir, Arect, tams);
+            MoverSerpiente(serpienteCliente, dirC, Arect, tamsC);
+            sprintf_s(szBuffer, "OK ON TIMER");
+            iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        }
 
-        //bandEC = 0;
+        if (ordenante == KEYDOWN)
+        {
+            if (user == CLIENT)
+            {
+                MoverSerpiente(serpienteCliente, dirC, Arect, tamsC);
+            }
+
+            if (user == SERVER)
+            {
+                MoverSerpiente(serpiente, dir, Arect, tams);
+            }
+
+            sprintf_s(szBuffer, "OK KEYDOWN");
+            iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        }
+
+        if (ordenante == CLIENT)
+        {
+            bandTimer = timer;
+            sprintf_s(szBuffer, "OK RUN TIMER");
+            iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        }
+
+        
+        if (ordenante == GAMEOVER)
+        {
+            KillTimer(hWnd, IDT_TIMER1);
+            MessageBox(hWnd, L"Felicidades ganaste, :)", L"Fin del juego",
+                MB_OK | MB_ICONINFORMATION);
+            sprintf_s(szBuffer, "OK GAME OVER");
+            iSendResult = send(ClientSocket, szBuffer, sizeof(char) * 256, 0);
+        }
+        
+        
+
+        InvalidateRect(hWnd, NULL, TRUE);
 
         iResult = shutdown(ClientSocket, SD_SEND);
     }
@@ -1294,21 +1489,18 @@ void EnviarMensaje(HWND hIP, HWND hWnd, char *mensaje) {
 
 void obtenerMensaje(HWND hWnd, char* szMsg) {
     int dirI = 0, tamI = 0, user = 0, yI = 0;
-    TCHAR info[256];
 
     sscanf(szMsg, "%d %d %d %d", &dirI, &tamI, &user, &yI);
 
-    GetClientRect(hWnd, &area);
+    GetClientRect(hWnd, &Arect);
     if (user == CLIENT)
     {
-        //MoverSerpiente(serpienteCliente, dirI, area, tamI);
         serpienteCliente[tamI - 1].dir = dirI;
         tamsC = tamI;
     }
 
     if (user == SERVER)
     {
-        //MoverSerpiente(serpiente, dirI, area, tamI);
         serpiente[tamI - 1].dir = dirI;
         tams = tamI;
     }
@@ -1316,6 +1508,6 @@ void obtenerMensaje(HWND hWnd, char* szMsg) {
     InvalidateRect(hWnd, NULL, TRUE);
 }
 
-void getString(int dir, int tam, int user, int y, char *buffer) {
-    sprintf(buffer, "%d %d %d %d",dir, tam, user, y);
+void getString(int ordenante, int user, int timer, int Comx, int Comy, int Comtipo, int dir, int tam, int dir2, int tam2, char* buffer) {
+    sprintf(buffer, "%d %d %d %d %d %d %d %d %d %d", ordenante, user, timer, Comx, Comy, Comtipo, dir, tam, dir2, tam2);
 }
